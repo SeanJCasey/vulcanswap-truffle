@@ -1,0 +1,16 @@
+**node_modules
+*.DS_Store
+
+# contract builds
+build
+
+# client dapp
+client
+
+# private files
+*.secret
+*.env
+
+# vyper stuff
+vyper
+contracts-vyper

@@ -14,3 +14,6 @@ client
 # vyper stuff
 vyper
 contracts-vyper
+
+# remote caller (AWS)
+remote-caller*

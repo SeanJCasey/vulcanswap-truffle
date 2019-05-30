@@ -1,0 +1,20 @@
+{
+  "name": "final-project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "abi-contract-addr.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "openzeppelin-solidity": "^2.2.0",
+    "truffle-contract": "^4.0.12",
+    "truffle-hdwallet-provider": "^1.0.9",
+    "truffle-security": "^1.4.4"
+  }
+}

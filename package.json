@@ -7,14 +7,18 @@
     "test": "test"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^8.0.0",
     "openzeppelin-solidity": "^2.2.0",
     "truffle-contract": "^4.0.12",
-    "truffle-hdwallet-provider": "^1.0.9",
-    "truffle-security": "^1.4.4"
+    "truffle-hdwallet-provider": "^1.0.9"
+  },
+  "devDependencies": {
+    "truffle-plugin-verify": "^0.2.2",
+    "truffle-security": "^1.5.1"
   }
 }

@@ -27,21 +27,21 @@ This repo contains the Node script for executing the method on our smart contrac
 1. Install Truffle globally: `npm install -g truffle`
 
 2. Clone this repo and install dependencies
-`git clone git@github.com:SeanJCasey/vulcanswap-truffle.git vulcanswap`
-`npm i`
+- `git clone git@github.com:SeanJCasey/vulcanswap-truffle.git vulcanswap`
+- `npm i`
 
 3. Clone the client repo into a `client` subdirectory and install dependencies
-`git clone git@github.com:SeanJCasey/vulcanswap-client.git client`
-`cd client`
-`npm i`
-`cd ..`
+- `git clone git@github.com:SeanJCasey/vulcanswap-client.git client`
+- `cd client`
+- `npm i`
+- `cd ..`
 (Note: the `client/builds` folder is where truffle-config is set up to build its smart contracts for easy integration with frontend development).
 
 4. Clone the remote repo into a `remote` subdirectory and install dependencies
-`git clone git@github.com:SeanJCasey/vulcanswap-remote.git remote`
-`cd remote`
-`npm i`
-`cd ..`
+- `git clone git@github.com:SeanJCasey/vulcanswap-remote.git remote`
+- `cd remote`
+- `npm i`
+- `cd ..`
 
 5. Deploy a local blockchain via Truffle Develop
 

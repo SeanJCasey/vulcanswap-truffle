@@ -16,7 +16,9 @@ https://github.com/SeanJCasey/vulcanswap-client
 
 This repo contains the single page Drizzle / React frontend.
 
-### vulcanswap-remote (coming soon)
+### vulcanswap-remote
+
+https://github.com/SeanJCasey/vulcanswap-remote
 
 This repo contains the Node script for executing the method on our smart contract that executes swaps on Uniswap for orders that are due for their next swap.
 

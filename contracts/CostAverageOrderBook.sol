@@ -47,7 +47,7 @@ contract CostAverageOrderBook is Ownable {
         uint256 _orderId
     );
 
-    constructor (address _uniswapFactoryAddress) public payable { // I think we need payable to instantiate the contract with ETH
+    constructor (address _uniswapFactoryAddress) public {
         factory = UniswapFactoryInterface(_uniswapFactoryAddress);
         nextId = 1; // Set first order as 1 instead of 0
 

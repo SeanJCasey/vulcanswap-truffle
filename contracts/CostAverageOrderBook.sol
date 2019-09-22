@@ -9,7 +9,6 @@ contract CostAverageOrderBook is Ownable {
     using SafeMath for uint256;
 
     uint256 public nextId;
-    address private remoteCaller;
     uint256 private feeBalance;
     uint256 private feesWithdrawn;
     uint256 public minAmount;
@@ -48,14 +47,8 @@ contract CostAverageOrderBook is Ownable {
         uint256 _orderId
     );
 
-    modifier onlyRemoteCaller() {
-        require(msg.sender == remoteCaller);
-        _;
-    }
-
     constructor (address _uniswapFactoryAddress) public payable { // I think we need payable to instantiate the contract with ETH
         factory = UniswapFactoryInterface(_uniswapFactoryAddress);
-        remoteCaller = msg.sender; // TODO: CHANGE TO SERVER'S WALLET
         nextId = 1; // Set first order as 1 instead of 0
 
         // Initial order min/max
@@ -181,10 +174,6 @@ contract CostAverageOrderBook is Ownable {
         minFrequency = _minFrequency;
     }
 
-    function setRemoteCaller (address _remoteCaller) public onlyOwner {
-        remoteCaller = _remoteCaller;
-    }
-
     function withdrawFees () public onlyOwner {
         require (feeBalance > 0);
 
@@ -217,7 +206,7 @@ contract CostAverageOrderBook is Ownable {
         return true;
     }
 
-    function checkConversionDueAll() view external onlyRemoteCaller returns (uint256[] memory) {
+    function checkConversionDueAll() view external returns (uint256[] memory) {
         uint256 totalOrderCount = getOrderCount();
         require(totalOrderCount > 0);
 
@@ -230,7 +219,7 @@ contract CostAverageOrderBook is Ownable {
         return coversionDueMap;
     }
 
-    function checkConversionDueBatch(uint256 _idStart, uint16 _count) view external onlyRemoteCaller returns (uint256[] memory) {
+    function checkConversionDueBatch(uint256 _idStart, uint16 _count) view external returns (uint256[] memory) {
         uint256 totalOrderCount = getOrderCount();
         require(_idStart > 0);
         require(_idStart <= totalOrderCount);
@@ -281,14 +270,14 @@ contract CostAverageOrderBook is Ownable {
     }
 
     // Execute converstions 1-by-1
-    function executeDueConversion (uint256 _id) public onlyRemoteCaller {
+    function executeDueConversion (uint256 _id) public {
         if (checkConversionDue(_id) == true) {
             convertCurrency(_id);
         }
     }
 
     // Execute conversions en masse
-    function executeDueConversions () external onlyRemoteCaller {
+    function executeDueConversions () external {
         for (uint256 i=1; i<=getOrderCount(); i++) {
             executeDueConversion(i);
         }

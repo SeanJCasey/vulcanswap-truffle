@@ -72,7 +72,16 @@ contract CostAverageOrderBook is Ownable {
         emit CancelOrder(order.account, _id);
     }
 
-    function createOrder (uint256 _amount, address _targetCurrency, uint256 _frequency, uint8 _batches) public payable returns (uint256 id_) {
+    function createOrder (
+        uint256 _amount,
+        address _targetCurrency,
+        uint256 _frequency,
+        uint8 _batches
+    )
+        public
+        payable
+        returns (uint256 id_)
+    {
         require(_amount == msg.value); // Can't use this if they send DAI
 
         // Enforce min/max for params
@@ -103,45 +112,101 @@ contract CostAverageOrderBook is Ownable {
         return nextId-1;
     }
 
-    function getFeeBalance () view public onlyOwner returns (uint256 feeBalance_) {
+    function getFeeBalance ()
+        view
+        public
+        onlyOwner
+        returns (uint256 feeBalance_)
+    {
         feeBalance_ = feeBalance;
     }
 
-    function getOrder (uint256 _id) view public returns (
-        uint256 id_, uint256 amount_, address targetCurrency_, uint256 frequency_, uint8 batches_,
-        uint8 batchesExecuted_, uint256 lastConversionTimestamp_, uint256 targetCurrencyConverted_,
-        uint256 sourceCurrencyBalance_) {
+    function getOrder (uint256 _id)
+        view
+        public
+        returns (
+            uint256 id_,
+            uint256 amount_,
+            address targetCurrency_,
+            uint256 frequency_,
+            uint8 batches_,
+            uint8 batchesExecuted_,
+            uint256 lastConversionTimestamp_,
+            uint256 targetCurrencyConverted_,
+            uint256 sourceCurrencyBalance_
+        )
+    {
         OrderInfo memory order = idToCostAverageOrder[_id];
 
-        return (_id, order.amount, order.targetCurrency, order.frequency, order.batches,
-            order.batchesExecuted, order.lastConversionTimestamp, order.targetCurrencyConverted,
-            order.sourceCurrencyBalance);
+        return (
+            _id,
+            order.amount,
+            order.targetCurrency,
+            order.frequency,
+            order.batches,
+            order.batchesExecuted,
+            order.lastConversionTimestamp,
+            order.targetCurrencyConverted,
+            order.sourceCurrencyBalance
+        );
     }
 
     function getOrderCount () view public returns (uint256) {
         return nextId-1;
     }
 
-    function getOrderCountForAccount (address _account) view public returns (uint256 count_) {
+    function getOrderCountForAccount (address _account)
+        view
+        public
+        returns (uint256 count_)
+    {
         return accountToOrderIds[_account].length;
     }
 
-    function getOrderForAccountIndex (address _account, uint256 _index) view public returns (
-        uint256 id_, uint256 amount_, address targetCurrency_, uint256 frequency_, uint8 batches_,
-        uint8 batchesExecuted_, uint256 lastConversionTimestamp_, uint256 targetCurrencyConverted_,
-        uint256 sourceCurrencyBalance_) {
+    function getOrderForAccountIndex (address _account, uint256 _index)
+        view
+        public
+        returns (
+            uint256 id_,
+            uint256 amount_,
+            address targetCurrency_,
+            uint256 frequency_,
+            uint8 batches_,
+            uint8 batchesExecuted_,
+            uint256 lastConversionTimestamp_,
+            uint256 targetCurrencyConverted_,
+            uint256 sourceCurrencyBalance_
+        )
+    {
         require(_index < getOrderCountForAccount(_account));
 
         return getOrder(accountToOrderIds[_account][_index]);
     }
 
-    function getOrderParamLimits() view public returns (uint256 minAmount_, uint32 minFrequency_,
-        uint8 minBatches_, uint8 maxBatches_) {
+    function getOrderParamLimits()
+        view
+        public
+        returns (
+            uint256 minAmount_,
+            uint32 minFrequency_,
+            uint8 minBatches_,
+            uint8 maxBatches_
+        )
+    {
         return (minAmount, minFrequency, minBatches, maxBatches);
     }
 
     // Convenience function for dapp display of contract stats
-    function getStatTotals () view external returns (uint256 orders_, uint256 conversions_, uint256 managedEth_, uint256 fees_) {
+    function getStatTotals ()
+        view
+        external
+        returns (
+            uint256 orders_,
+            uint256 conversions_,
+            uint256 managedEth_,
+            uint256 fees_
+        )
+    {
         orders_ = getOrderCount();
 
         conversions_ = 0;
@@ -206,7 +271,11 @@ contract CostAverageOrderBook is Ownable {
         return true;
     }
 
-    function checkConversionDueAll() view external returns (uint256[] memory) {
+    function checkConversionDueAll()
+        view
+        external
+        returns (uint256[] memory)
+    {
         uint256 totalOrderCount = getOrderCount();
         require(totalOrderCount > 0);
 
@@ -219,15 +288,24 @@ contract CostAverageOrderBook is Ownable {
         return coversionDueMap;
     }
 
-    function checkConversionDueBatch(uint256 _idStart, uint16 _count) view external returns (uint256[] memory) {
+    function checkConversionDueBatch(uint256 _idStart, uint16 _count)
+        view
+        external
+        returns (uint256[] memory)
+    {
         uint256 totalOrderCount = getOrderCount();
         require(_idStart > 0);
         require(_idStart <= totalOrderCount);
 
         uint256[] memory coversionDueMap = new uint256[](_count);
 
-        for (uint256 i=0; i<_count && _idStart.add(i) <= totalOrderCount; i++) {
-            if (checkConversionDue(_idStart.add(i)) == true) coversionDueMap[i] = _idStart.add(i);
+        for (
+            uint256 i=0; i<_count && _idStart.add(i) <= totalOrderCount; i++
+        )
+        {
+            if (checkConversionDue(_idStart.add(i)) == true) {
+                coversionDueMap[i] = _idStart.add(i);
+            }
         }
 
         return coversionDueMap;
@@ -238,8 +316,10 @@ contract CostAverageOrderBook is Ownable {
 
         uint256 batchValue = valuePerBatch(order.amount, order.batches);
 
-        // In case the batchValue is somehow more than the balance, use the remainder
-        if (order.sourceCurrencyBalance < batchValue) batchValue = order.sourceCurrencyBalance;
+        // In case batchValue is more than balance, use the remainder
+        if (order.sourceCurrencyBalance < batchValue) {
+            batchValue = order.sourceCurrencyBalance;
+        }
 
         // Update all values possible before performing conversion
         order.sourceCurrencyBalance -= batchValue;
@@ -251,7 +331,11 @@ contract CostAverageOrderBook is Ownable {
         feeBalance += fee;
 
         // ETH converted to tokens here
-        uint256 amountReceived = exchangeCurrency(order.account, order.targetCurrency, batchValue.sub(fee));
+        uint256 amountReceived = exchangeCurrency(
+            order.account,
+            order.targetCurrency,
+            batchValue.sub(fee)
+        );
 
         // Update total tokens converted
         order.targetCurrencyConverted += amountReceived;
@@ -259,14 +343,28 @@ contract CostAverageOrderBook is Ownable {
         emit OrderConversion(order.account, _id);
     }
 
-    function exchangeCurrency(address _account, address _targetCurrency, uint256 _amountSourceCurrency) private returns (uint256 amountReceived_) {
-        // Set up the Uniswap exchange interface by finding the token's address via the factory
+    function exchangeCurrency(
+        address _account,
+        address _targetCurrency,
+        uint256 _amountSourceCurrency
+    )
+        private
+        returns (uint256 amountReceived_)
+    {
+        // Set up the Uniswap exchange interface for the target token
         address exchangeAddress = factory.getExchange(_targetCurrency);
         UniswapExchangeInterface exchange = UniswapExchangeInterface(exchangeAddress);
 
-        uint256 min_tokens = 1; // TODO: implement this correctly, see "sell order" logic in docs
-        uint256 deadline = now + 300; // this is the value in the docs; used so nodes can't hold off on unsigned txs and wait for optimal times to sell/arbitrage
-        amountReceived_ = exchange.ethToTokenTransferInput.value(_amountSourceCurrency)(min_tokens, deadline, _account);
+        uint256 min_tokens = 1; // TODO: implement this correctly
+        uint256 deadline = now + 300; // this is the value in the docs
+        amountReceived_ = exchange.ethToTokenTransferInput.value(
+            _amountSourceCurrency
+        )
+        (
+            min_tokens,
+            deadline,
+            _account
+        );
     }
 
     // Execute converstions 1-by-1
@@ -283,7 +381,11 @@ contract CostAverageOrderBook is Ownable {
         }
     }
 
-    function valuePerBatch(uint256 _amount, uint8 _batches) pure internal returns (uint256) {
+    function valuePerBatch(uint256 _amount, uint8 _batches)
+        pure
+        internal
+        returns (uint256)
+    {
         return _amount.div(_batches);
     }
 }

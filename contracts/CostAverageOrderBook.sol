@@ -47,7 +47,7 @@ contract CostAverageOrderBook is Ownable {
         uint256 _orderId
     );
 
-    constructor (address _uniswapFactoryAddress) public {
+    constructor(address _uniswapFactoryAddress) public {
         factory = UniswapFactoryInterface(_uniswapFactoryAddress);
         nextId = 1; // Set first order as 1 instead of 0
 
@@ -58,7 +58,7 @@ contract CostAverageOrderBook is Ownable {
         minFrequency = 1 hours;
     }
 
-    function cancelOrder (uint256 _id) public {
+    function cancelOrder(uint256 _id) public {
         OrderInfo storage order = idToCostAverageOrder[_id];
 
         require(order.account == msg.sender);
@@ -72,7 +72,7 @@ contract CostAverageOrderBook is Ownable {
         emit CancelOrder(order.account, _id);
     }
 
-    function createOrder (
+    function createOrder(
         uint256 _amount,
         address _targetCurrency,
         uint256 _frequency,
@@ -112,7 +112,7 @@ contract CostAverageOrderBook is Ownable {
         return nextId-1;
     }
 
-    function getFeeBalance ()
+    function getFeeBalance()
         view
         public
         onlyOwner
@@ -121,7 +121,7 @@ contract CostAverageOrderBook is Ownable {
         feeBalance_ = feeBalance;
     }
 
-    function getOrder (uint256 _id)
+    function getOrder(uint256 _id)
         view
         public
         returns (
@@ -151,11 +151,11 @@ contract CostAverageOrderBook is Ownable {
         );
     }
 
-    function getOrderCount () view public returns (uint256) {
+    function getOrderCount() view public returns (uint256) {
         return nextId-1;
     }
 
-    function getOrderCountForAccount (address _account)
+    function getOrderCountForAccount(address _account)
         view
         public
         returns (uint256 count_)
@@ -163,7 +163,7 @@ contract CostAverageOrderBook is Ownable {
         return accountToOrderIds[_account].length;
     }
 
-    function getOrderForAccountIndex (address _account, uint256 _index)
+    function getOrderForAccountIndex(address _account, uint256 _index)
         view
         public
         returns (
@@ -197,7 +197,7 @@ contract CostAverageOrderBook is Ownable {
     }
 
     // Convenience function for dapp display of contract stats
-    function getStatTotals ()
+    function getStatTotals()
         view
         external
         returns (
@@ -219,27 +219,27 @@ contract CostAverageOrderBook is Ownable {
         fees_ = getTotalFeesCollected();
     }
 
-    function getTotalFeesCollected () view public returns (uint256) {
+    function getTotalFeesCollected() view public returns (uint256) {
         return feeBalance.add(feesWithdrawn);
     }
 
-    function setMaxBatches (uint8 _maxBatches) public onlyOwner {
+    function setMaxBatches(uint8 _maxBatches) public onlyOwner {
         maxBatches = _maxBatches;
     }
 
-    function setMinAmount (uint256 _minAmount) public onlyOwner {
+    function setMinAmount(uint256 _minAmount) public onlyOwner {
         minAmount = _minAmount;
     }
 
-    function setMinBatches (uint8 _minBatches) public onlyOwner {
+    function setMinBatches(uint8 _minBatches) public onlyOwner {
         minBatches = _minBatches;
     }
 
-    function setMinFrequency (uint32 _minFrequency) public onlyOwner {
+    function setMinFrequency(uint32 _minFrequency) public onlyOwner {
         minFrequency = _minFrequency;
     }
 
-    function withdrawFees () public onlyOwner {
+    function withdrawFees() public onlyOwner {
         require (feeBalance > 0);
 
         uint256 withdrawalAmount = feeBalance;
@@ -252,7 +252,7 @@ contract CostAverageOrderBook is Ownable {
 
     /*** Uniswap conversion logic ***/
 
-    function checkConversionDue (uint256 _id) view public returns (bool) {
+    function checkConversionDue(uint256 _id) view public returns (bool) {
         OrderInfo memory order = idToCostAverageOrder[_id];
 
         // Check if there is a balance of source currency
@@ -368,14 +368,14 @@ contract CostAverageOrderBook is Ownable {
     }
 
     // Execute converstions 1-by-1
-    function executeDueConversion (uint256 _id) public {
+    function executeDueConversion(uint256 _id) public {
         if (checkConversionDue(_id) == true) {
             convertCurrency(_id);
         }
     }
 
     // Execute conversions en masse
-    function executeDueConversions () external {
+    function executeDueConversions() external {
         for (uint256 i=1; i<=getOrderCount(); i++) {
             executeDueConversion(i);
         }

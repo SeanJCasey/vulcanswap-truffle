@@ -2,6 +2,7 @@ pragma solidity ^0.5.2;
 
 import '../node_modules/openzeppelin-solidity/contracts/ownership/Ownable.sol';
 import '../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol';
+import '../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol';
 import './UniswapFactoryInterface.sol';
 import './UniswapExchangeInterface.sol';
 
@@ -11,7 +12,6 @@ contract CostAverageOrderBook is Ownable {
     uint256 public nextId;
     uint256 private feeBalance;
     uint256 private feesWithdrawn;
-    uint256 public minAmount;
     uint32 public minFrequency;
     uint8 public minBatches;
     uint8 public maxBatches;
@@ -20,6 +20,7 @@ contract CostAverageOrderBook is Ownable {
 
     struct OrderInfo {
         address account;
+        address sourceCurrency;
         address targetCurrency;
         uint256 amount;
         uint256 frequency; // in seconds
@@ -31,6 +32,8 @@ contract CostAverageOrderBook is Ownable {
     }
     mapping(uint256 => OrderInfo) public idToCostAverageOrder;
     mapping(address => uint256[]) public accountToOrderIds;
+    mapping(address => uint256) public sourceCurrencyToMinAmount;
+    mapping(address => uint256) public sourceCurrencyToMaxAmount;
 
     event NewOrder(
         address indexed _account,
@@ -53,9 +56,28 @@ contract CostAverageOrderBook is Ownable {
 
         // Initial order min/max
         maxBatches = 255;
-        minAmount = 0.1 ether;
         minBatches = 1;
         minFrequency = 1 hours;
+        sourceCurrencyToMinAmount[address(0)] = 0.1 ether;
+        sourceCurrencyToMaxAmount[address(0)] = 100 ether;
+    }
+
+    // A max amount of 0 means the token is not accepted as source currency.
+    function updateSourceCurrency(address _sourceCurrency, uint256 _minAmount, uint256 _maxAmount)
+        external
+        onlyOwner
+    {
+        sourceCurrencyToMinAmount[_sourceCurrency] = _minAmount;
+        sourceCurrencyToMaxAmount[_sourceCurrency] = _maxAmount;
+    }
+
+    function getSourceCurrencyLimits(address _sourceCurrency)
+        external
+        view
+        returns (uint256 minAmount_, uint256 maxAmount_)
+    {
+        minAmount_ = sourceCurrencyToMinAmount[_sourceCurrency];
+        maxAmount_ = sourceCurrencyToMaxAmount[_sourceCurrency];
     }
 
     function cancelOrder(uint256 _id) public {
@@ -67,13 +89,19 @@ contract CostAverageOrderBook is Ownable {
         uint256 refundAmount = order.sourceCurrencyBalance;
         order.sourceCurrencyBalance = 0;
 
-        msg.sender.transfer(refundAmount);
+        if (order.sourceCurrency == address(0)) {
+            msg.sender.transfer(refundAmount);
+        }
+        else {
+            IERC20(order.sourceCurrency).transfer(order.account, refundAmount);
+        }
 
         emit CancelOrder(order.account, _id);
     }
 
     function createOrder(
         uint256 _amount,
+        address _sourceCurrency,
         address _targetCurrency,
         uint256 _frequency,
         uint8 _batches
@@ -82,16 +110,52 @@ contract CostAverageOrderBook is Ownable {
         payable
         returns (uint256 id_)
     {
-        require(_amount == msg.value); // Can't use this if they send DAI
-
-        // Enforce min/max for params
-        require(_amount >= minAmount);
+        // Enforce common min/max values
+        require(_batches <= maxBatches);
         require(_batches >= minBatches);
         require(_frequency >= minFrequency);
-        require(_batches <= maxBatches);
+
+        uint256 orderId;
+        if (_sourceCurrency == address(0)) {
+            orderId = createOrderEth(
+                _amount,
+                _targetCurrency,
+                _frequency,
+                _batches
+            );
+        }
+        else {
+            orderId = createOrderToken(
+                _amount,
+                _sourceCurrency,
+                _targetCurrency,
+                _frequency,
+                _batches
+            );
+        }
+        accountToOrderIds[msg.sender].push(orderId);
+
+        emit NewOrder(msg.sender, orderId);
+
+        return orderId;
+    }
+
+    function createOrderEth(
+        uint256 _amount,
+        address _targetCurrency,
+        uint256 _frequency,
+        uint8 _batches
+    )
+        internal
+        returns (uint256 id_)
+    {
+        require(_amount == msg.value); // should not be sending ETH
+        require(_targetCurrency != address(0)); // target can't be ETH
+        require(_amount >= sourceCurrencyToMinAmount[address(0)]);
 
         OrderInfo memory newOrder = OrderInfo({
             amount: _amount,
+            sourceCurrency: address(0),
             targetCurrency: _targetCurrency,
             frequency: _frequency,
             batches: _batches,
@@ -103,14 +167,49 @@ contract CostAverageOrderBook is Ownable {
         });
 
         idToCostAverageOrder[nextId] = newOrder;
-        accountToOrderIds[msg.sender].push(nextId);
-
-        emit NewOrder(msg.sender, nextId);
-
         nextId++;
-
         return nextId-1;
     }
+
+    function createOrderToken(
+        uint256 _amount,
+        address _sourceCurrency,
+        address _targetCurrency,
+        uint256 _frequency,
+        uint8 _batches
+    )
+        internal
+        returns (uint256 id_)
+    {
+        // Validate inputs
+        require(msg.value == 0); // Not payable
+        require(_targetCurrency != _sourceCurrency); // source and target can't be same token
+        require(_amount >= sourceCurrencyToMinAmount[_sourceCurrency]);
+
+        // Transfer the ERC20 tokens to the contract
+        IERC20(_sourceCurrency).transferFrom(msg.sender, address(this), _amount);
+
+        // Create order
+        OrderInfo memory newOrder = OrderInfo({
+            amount: _amount,
+            sourceCurrency: _sourceCurrency,
+            targetCurrency: _targetCurrency,
+            frequency: _frequency,
+            batches: _batches,
+            account: msg.sender,
+            sourceCurrencyBalance: _amount,
+            targetCurrencyConverted: 0,
+            batchesExecuted: 0,
+            lastConversionTimestamp: 0
+        });
+        idToCostAverageOrder[nextId] = newOrder;
+
+        // Increment next order id
+        nextId++;
+        return nextId-1;
+    }
+
+
 
     function getFeeBalance()
         view
@@ -127,6 +226,7 @@ contract CostAverageOrderBook is Ownable {
         returns (
             uint256 id_,
             uint256 amount_,
+            address sourceCurrency_,
             address targetCurrency_,
             uint256 frequency_,
             uint8 batches_,
@@ -141,6 +241,7 @@ contract CostAverageOrderBook is Ownable {
         return (
             _id,
             order.amount,
+            order.sourceCurrency,
             order.targetCurrency,
             order.frequency,
             order.batches,
@@ -169,6 +270,7 @@ contract CostAverageOrderBook is Ownable {
         returns (
             uint256 id_,
             uint256 amount_,
+            address sourceCurrency_,
             address targetCurrency_,
             uint256 frequency_,
             uint8 batches_,
@@ -187,13 +289,12 @@ contract CostAverageOrderBook is Ownable {
         view
         public
         returns (
-            uint256 minAmount_,
             uint32 minFrequency_,
             uint8 minBatches_,
             uint8 maxBatches_
         )
     {
-        return (minAmount, minFrequency, minBatches, maxBatches);
+        return (minFrequency, minBatches, maxBatches);
     }
 
     // Convenience function for dapp display of contract stats
@@ -225,10 +326,6 @@ contract CostAverageOrderBook is Ownable {
 
     function setMaxBatches(uint8 _maxBatches) public onlyOwner {
         maxBatches = _maxBatches;
-    }
-
-    function setMinAmount(uint256 _minAmount) public onlyOwner {
-        minAmount = _minAmount;
     }
 
     function setMinBatches(uint8 _minBatches) public onlyOwner {
@@ -326,16 +423,29 @@ contract CostAverageOrderBook is Ownable {
         order.batchesExecuted += 1;
         order.lastConversionTimestamp = now;
 
-        // Impose the fee here
-        uint256 fee = batchValue.div(200); // 0.5%
-        feeBalance += fee;
-
-        // ETH converted to tokens here
-        uint256 amountReceived = exchangeCurrency(
-            order.account,
-            order.targetCurrency,
-            batchValue.sub(fee)
-        );
+        uint256 amountReceived;
+        if (order.targetCurrency == address(0)) {
+            amountReceived = exchangeTokenToEth(
+                order.account,
+                order.sourceCurrency,
+                batchValue
+            );
+        }
+        else {
+            amountReceived = exchangeEthToToken(
+                order.account,
+                order.targetCurrency,
+                batchValue
+            );
+        }
+        // else {
+        //     amountReceived = exchangeTokenToToken(
+        //         order.account,
+        //         order.sourceCurrency,
+        //         order.targetCurrency,
+        //         batchValue
+        //     );
+        // }
 
         // Update total tokens converted
         order.targetCurrencyConverted += amountReceived;
@@ -343,8 +453,8 @@ contract CostAverageOrderBook is Ownable {
         emit OrderConversion(order.account, _id);
     }
 
-    function exchangeCurrency(
-        address _account,
+    function exchangeEthToToken(
+        address _recipient,
         address _targetCurrency,
         uint256 _amountSourceCurrency
     )
@@ -363,9 +473,60 @@ contract CostAverageOrderBook is Ownable {
         (
             min_tokens,
             deadline,
-            _account
+            _recipient
         );
     }
+
+    function exchangeTokenToEth(
+        address _recipient,
+        address _sourceCurrency,
+        uint256 _amountSourceCurrency
+    )
+        private
+        returns (uint256 amountReceived_)
+    {
+        // Set up the Uniswap exchange interface for the target token
+        address exchangeAddress = factory.getExchange(_sourceCurrency);
+        UniswapExchangeInterface exchange = UniswapExchangeInterface(exchangeAddress);
+
+        uint256 min_eth = 1; // TODO: implement this correctly
+        uint256 deadline = now + 300; // this is the value in the docs
+
+        // Approve token transfer and execute swap
+        IERC20(_sourceCurrency).approve(exchangeAddress, _amountSourceCurrency);
+        amountReceived_ = exchange.tokenToEthTransferInput(
+            _amountSourceCurrency,
+            min_eth,
+            deadline,
+            _recipient
+        );
+    }
+
+    // function exchangeTokenToToken(
+    //     address _recipient,
+    //     address _sourceCurrency,
+    //     address _targetCurrency,
+    //     uint256 _amountSourceCurrency
+    // )
+    //     private
+    //     returns (uint256 amountReceived_)
+    // {
+    //     // Set up the Uniswap exchange interface for the target token
+    //     address exchangeAddress = factory.getExchange(_targetCurrency);
+    //     UniswapExchangeInterface exchange = UniswapExchangeInterface(exchangeAddress);
+
+    //     uint256 min_eth = 1; // TODO: implement this correctly
+    //     uint256 deadline = now + 300; // this is the value in the docs
+
+    //     // Approve token transfer and execute swap
+    //     IERC20(_sourceCurrency).approve(exchangeAddress, _amountSourceCurrency);
+    //     amountReceived_ = exchange.tokenToTokenTransferInput(
+    //         _amountSourceCurrency,
+    //         min_tokens,
+    //         deadline,
+    //         _recipient
+    //     );
+    // }
 
     // Execute converstions 1-by-1
     function executeDueConversion(uint256 _id) public {

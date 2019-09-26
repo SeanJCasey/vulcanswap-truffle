@@ -4,35 +4,33 @@ const UniswapFactoryInterface = artifacts.require("./UniswapFactoryInterface");
 const SeanToken = artifacts.require("./SeanToken");
 const MoonToken = artifacts.require("./MoonToken");
 const ConsensysToken = artifacts.require("./ConsensysToken");
+const FakeDai = artifacts.require("./FakeDai");
 
 module.exports = (deployer, network, accounts) => {
-    const uniswapFactoryAddresses = {
-        mainnet: "0xc0a47dFe034B400B47bDaD5FecDa2621de6c4d95",
-        rinkeby: "0xf5D915570BC477f9B8D6C0E980aA81757A3AaC36"
-    }
+    const uniswapNetworks = ["mainnet, rinkeby"];
 
-    // Create fake tokens if not mainnet
-    if (network !== 'mainnet') {
+    // Create fake exchanges if not a Uniswap-supported network
+    if (!(network in uniswapNetworks)) {
         let iFactory;
-
         deployer
-            .then(() => {
-                if (!(network in uniswapFactoryAddresses)) {
-                    return UniswapFactory.deployed()
-                        .then(instance => uniswapFactoryAddresses[network] = instance.address)
-                }
-            })
-            .then(() => UniswapFactoryInterface.at(uniswapFactoryAddresses[network]))
+            // 1. Instantiate a uniswap factory interface with the deployed factory.
+            .then(() => UniswapFactory.deployed())
+            .then(instance => UniswapFactoryInterface.at(instance.address))
             .then(instance => iFactory = instance)
+
+            // 2. Create a uniswap exchange for each token.
+            .then(() => FakeDai.deployed())
+            .then(instance => createExchangeWithLiquidity(
+                iFactory, instance, web3.utils.toWei("5", "ether"), web3.utils.toWei("1000")))
             .then(() => SeanToken.deployed())
             .then(instance => createExchangeWithLiquidity(
-                iFactory, instance, 5000000000000000000, 10000))
+                iFactory, instance, web3.utils.toWei("3"), web3.utils.toWei("10000")))
             .then(() => MoonToken.deployed())
             .then(instance => createExchangeWithLiquidity(
-                iFactory, instance, 10000000000000000000, 300000))
+                iFactory, instance, web3.utils.toWei("1"), web3.utils.toWei("300000")))
             .then(() => ConsensysToken.deployed())
             .then(instance => createExchangeWithLiquidity(
-                iFactory, instance, 3000000000000000000, 500000))
+                iFactory, instance, web3.utils.toWei("0.3"), web3.utils.toWei("2000")))
             .catch(err => console.log(err));
     }
 };

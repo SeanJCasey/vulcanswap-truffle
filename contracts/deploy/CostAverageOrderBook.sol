@@ -1,4 +1,4 @@
-pragma solidity ^0.5.2;
+pragma solidity 0.5.8;
 
 import '../../node_modules/openzeppelin-solidity/contracts/ownership/Ownable.sol';
 import '../../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol';
@@ -35,6 +35,8 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
     mapping(address => uint256[]) public accountToOrderIds;
     mapping(address => uint256) public sourceCurrencyToMinAmount;
     mapping(address => uint256) public sourceCurrencyToMaxAmount;
+    mapping(address => uint256) public currencyToFeeBalance;
+    mapping(address => uint256) public currencyToFeesWithdrawn;
 
     event NewOrder(
         address indexed _account,
@@ -59,10 +61,6 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
         maxBatches = 255;
         minBatches = 1;
         minFrequency = 1 hours;
-
-        // sourceCurrencyToMinAmount[address(0)] = 0.1 ether;
-        // sourceCurrencyToMaxAmount[address(0)] = 100 ether;
-        // underlyingToCToken[address(0)] = _ethCToken;
     }
 
     // Compound needs to be able to pay back Eth loans
@@ -92,6 +90,21 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
         maxAmount_ = sourceCurrencyToMaxAmount[_sourceCurrency];
     }
 
+    // TODO
+    // function getFeesCollectedTotals()
+    //     view
+    //     external
+    //     returns (uint256[] memory fees_)
+    // {
+
+    // }
+
+    function closeOrder(uint256 _id) private {
+        // Delete loan and add leftover cTokens to fee
+        (uint256 cTokensRemaining, address cTokenAddress) = compoundCloseLoan(_id);
+        currencyToFeeBalance[cTokenAddress].add(cTokensRemaining);
+    }
+
     function cancelOrder(uint256 _id) public {
         OrderInfo storage order = idToCostAverageOrder[_id];
 
@@ -101,8 +114,13 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
         uint256 refundAmount = order.sourceCurrencyBalance;
         order.sourceCurrencyBalance = 0;
 
-        // If loaned on compound, redeem
-        // cTokensRemaining_ = compoundSelfDestruct(_id);
+        if (idToCompoundLoan[_id].balanceUnderlying > 0) {
+            // Transfer remaining loaned tokens back to owner
+            uint256 redeemAmount = compoundRedeemBalanceUnderlying(_id);
+            assert(redeemAmount == refundAmount);
+
+            closeOrder(_id);
+        }
 
         if (order.sourceCurrency == address(0)) {
             msg.sender.transfer(refundAmount);
@@ -316,31 +334,25 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
     }
 
     // Convenience function for dapp display of contract stats
-    function getStatTotals()
-        view
-        external
-        returns (
-            uint256 orders_,
-            uint256 conversions_,
-            uint256 managedEth_,
-            uint256 fees_
-        )
-    {
-        orders_ = getOrderCount();
+    // function getStatTotals()
+    //     view
+    //     external
+    //     returns (
+    //         uint256 orders_,
+    //         uint256 conversions_,
+    //         uint256 managedEth_
+    //     )
+    // {
+    //     orders_ = getOrderCount();
 
-        conversions_ = 0;
-        for (uint256 i=1; i<=getOrderCount(); i++) {
-            OrderInfo memory order = idToCostAverageOrder[i];
-            conversions_ += order.batchesExecuted;
-        }
+    //     conversions_ = 0;
+    //     for (uint256 i=1; i<=getOrderCount(); i++) {
+    //         OrderInfo memory order = idToCostAverageOrder[i];
+    //         conversions_ += order.batchesExecuted;
+    //     }
 
-        managedEth_ = address(this).balance.sub(feeBalance);
-        fees_ = getTotalFeesCollected();
-    }
-
-    function getTotalFeesCollected() view public returns (uint256) {
-        return feeBalance.add(feesWithdrawn);
-    }
+    //     managedEth_ = address(this).balance.sub(feeBalance);
+    // }
 
     function setMaxBatches(uint8 _maxBatches) public onlyOwner {
         maxBatches = _maxBatches;
@@ -474,6 +486,10 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
         order.targetCurrencyConverted += amountReceived;
 
         emit OrderConversion(order.account, _id);
+
+        if (order.sourceCurrencyBalance == 0) {
+            closeOrder(_id);
+        }
     }
 
     function exchangeEthToToken(

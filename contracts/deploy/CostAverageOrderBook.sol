@@ -19,10 +19,13 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
 
     UniswapFactoryInterface internal factory;
 
+    enum OrderState { Failed, InProgress, Completed, Cancelled }
+
     struct OrderInfo {
         address account;
         address sourceCurrency;
         address targetCurrency;
+        OrderState state;
         uint256 amount;
         uint256 frequency; // in seconds
         uint256 lastConversionTimestamp;
@@ -49,6 +52,11 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
     );
 
     event CancelOrder(
+        address indexed _account,
+        uint256 _orderId
+    );
+
+    event CompleteOrder(
         address indexed _account,
         uint256 _orderId
     );
@@ -99,10 +107,21 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
 
     // }
 
-    function closeOrder(uint256 _id) private {
-        // Delete loan and add leftover cTokens to fee
-        (uint256 cTokensRemaining, address cTokenAddress) = compoundCloseLoan(_id);
-        currencyToFeeBalance[cTokenAddress].add(cTokensRemaining);
+    function closeLoan(uint256 _id) private {
+        if (idToCompoundLoan[_id].balanceCTokens > 0) {
+            // Delete loan and add leftover cTokens to fee
+            (uint256 cTokensRemaining, address cTokenAddress) = compoundCloseLoan(_id);
+            currencyToFeeBalance[cTokenAddress].add(cTokensRemaining);
+        }
+    }
+
+    function completeOrder(uint256 _id) private {
+        OrderInfo storage order = idToCostAverageOrder[_id];
+
+        closeLoan(_id);
+        order.state = OrderState.Completed;
+
+        emit CompleteOrder(order.account, _id);
     }
 
     function cancelOrder(uint256 _id) public {
@@ -118,8 +137,6 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
             // Transfer remaining loaned tokens back to owner
             uint256 redeemAmount = compoundRedeemBalanceUnderlying(_id);
             assert(redeemAmount == refundAmount);
-
-            closeOrder(_id);
         }
 
         if (order.sourceCurrency == address(0)) {
@@ -128,6 +145,9 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
         else {
             IERC20(order.sourceCurrency).transfer(order.account, refundAmount);
         }
+
+        closeLoan(_id);
+        order.state = OrderState.Cancelled;
 
         emit CancelOrder(order.account, _id);
     }
@@ -195,6 +215,7 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
             amount: _amount,
             sourceCurrency: address(0),
             targetCurrency: _targetCurrency,
+            state: OrderState.InProgress,
             frequency: _frequency,
             batches: _batches,
             account: msg.sender,
@@ -232,6 +253,7 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
             amount: _amount,
             sourceCurrency: _sourceCurrency,
             targetCurrency: _targetCurrency,
+            state: OrderState.InProgress,
             frequency: _frequency,
             batches: _batches,
             account: msg.sender,
@@ -264,6 +286,7 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
             uint256 amount_,
             address sourceCurrency_,
             address targetCurrency_,
+            OrderState state_,
             uint256 frequency_,
             uint8 batches_,
             uint8 batchesExecuted_,
@@ -279,6 +302,7 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
             order.amount,
             order.sourceCurrency,
             order.targetCurrency,
+            order.state,
             order.frequency,
             order.batches,
             order.batchesExecuted,
@@ -308,6 +332,7 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
             uint256 amount_,
             address sourceCurrency_,
             address targetCurrency_,
+            OrderState state_,
             uint256 frequency_,
             uint8 batches_,
             uint8 batchesExecuted_,
@@ -488,7 +513,7 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
         emit OrderConversion(order.account, _id);
 
         if (order.sourceCurrencyBalance == 0) {
-            closeOrder(_id);
+            completeOrder(_id);
         }
     }
 

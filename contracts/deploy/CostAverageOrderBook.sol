@@ -1,12 +1,13 @@
 pragma solidity ^0.5.2;
 
-import '../node_modules/openzeppelin-solidity/contracts/ownership/Ownable.sol';
-import '../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol';
-import '../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol';
+import '../../node_modules/openzeppelin-solidity/contracts/ownership/Ownable.sol';
+import '../../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol';
+import '../../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol';
+import './CompoundLoanable.sol';
 import './UniswapFactoryInterface.sol';
 import './UniswapExchangeInterface.sol';
 
-contract CostAverageOrderBook is Ownable {
+contract CostAverageOrderBook is Ownable, CompoundLoanable {
     using SafeMath for uint256;
 
     uint256 public nextId;
@@ -58,17 +59,28 @@ contract CostAverageOrderBook is Ownable {
         maxBatches = 255;
         minBatches = 1;
         minFrequency = 1 hours;
-        sourceCurrencyToMinAmount[address(0)] = 0.1 ether;
-        sourceCurrencyToMaxAmount[address(0)] = 100 ether;
+
+        // sourceCurrencyToMinAmount[address(0)] = 0.1 ether;
+        // sourceCurrencyToMaxAmount[address(0)] = 100 ether;
+        // underlyingToCToken[address(0)] = _ethCToken;
     }
 
+    // Compound needs to be able to pay back Eth loans
+    function() external payable { require(msg.data.length == 0); }
+
     // A max amount of 0 means the token is not accepted as source currency.
-    function updateSourceCurrency(address _sourceCurrency, uint256 _minAmount, uint256 _maxAmount)
+    function updateSourceCurrency(
+        address _sourceCurrency,
+        uint256 _minAmount,
+        uint256 _maxAmount,
+        address _cToken
+    )
         external
         onlyOwner
     {
         sourceCurrencyToMinAmount[_sourceCurrency] = _minAmount;
         sourceCurrencyToMaxAmount[_sourceCurrency] = _maxAmount;
+        underlyingToCToken[_sourceCurrency] = _cToken;
     }
 
     function getSourceCurrencyLimits(address _sourceCurrency)
@@ -88,6 +100,9 @@ contract CostAverageOrderBook is Ownable {
 
         uint256 refundAmount = order.sourceCurrencyBalance;
         order.sourceCurrencyBalance = 0;
+
+        // If loaned on compound, redeem
+        // cTokensRemaining_ = compoundSelfDestruct(_id);
 
         if (order.sourceCurrency == address(0)) {
             msg.sender.transfer(refundAmount);
@@ -134,6 +149,11 @@ contract CostAverageOrderBook is Ownable {
             );
         }
         accountToOrderIds[msg.sender].push(orderId);
+
+        // Loan source currency on Compound if possible
+        if (underlyingToCToken[_sourceCurrency] != address(0)) {
+            createCompoundLoan(orderId, _amount, _sourceCurrency);
+        }
 
         emit NewOrder(msg.sender, orderId);
 
@@ -186,7 +206,7 @@ contract CostAverageOrderBook is Ownable {
         require(_targetCurrency != _sourceCurrency); // source and target can't be same token
         require(_amount >= sourceCurrencyToMinAmount[_sourceCurrency]);
 
-        // Transfer the ERC20 tokens to the contract
+        // Transfer tokens to contract
         IERC20(_sourceCurrency).transferFrom(msg.sender, address(this), _amount);
 
         // Create order
@@ -208,8 +228,6 @@ contract CostAverageOrderBook is Ownable {
         nextId++;
         return nextId-1;
     }
-
-
 
     function getFeeBalance()
         view
@@ -422,6 +440,11 @@ contract CostAverageOrderBook is Ownable {
         order.sourceCurrencyBalance -= batchValue;
         order.batchesExecuted += 1;
         order.lastConversionTimestamp = now;
+
+        // If source currency lent on Compound, redeem amount for order
+        if (idToCompoundLoan[_id].balanceUnderlying > 0) {
+            compoundRedeemUnderlying(_id, batchValue);
+        }
 
         uint256 amountReceived;
         if (order.targetCurrency == address(0)) {

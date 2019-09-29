@@ -7,10 +7,8 @@ const ConsensysToken = artifacts.require("./ConsensysToken");
 const FakeDai = artifacts.require("./FakeDai");
 
 module.exports = (deployer, network, accounts) => {
-    const uniswapNetworks = ["mainnet, rinkeby"];
-
     // Create fake exchanges if not a Uniswap-supported network
-    if (!(network in uniswapNetworks)) {
+    if (!["mainnet, rinkeby"].includes(network)) {
         let iFactory;
         deployer
             // 1. Instantiate a uniswap factory interface with the deployed factory.
@@ -32,6 +30,9 @@ module.exports = (deployer, network, accounts) => {
             .then(instance => createExchangeWithLiquidity(
                 iFactory, instance, web3.utils.toWei("0.3"), web3.utils.toWei("2000")))
             .catch(err => console.log(err));
+    }
+    else {
+        console.log("Skipped migration: create uniswap exchanges")
     }
 };
 

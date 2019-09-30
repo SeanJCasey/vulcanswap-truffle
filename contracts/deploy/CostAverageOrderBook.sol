@@ -453,21 +453,21 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
                 batchValue
             );
         }
-        else {
+        else if (order.sourceCurrency == address(0)) {
             amountReceived = exchangeEthToToken(
                 order.account,
                 order.targetCurrency,
                 batchValue
             );
         }
-        // else {
-        //     amountReceived = exchangeTokenToToken(
-        //         order.account,
-        //         order.sourceCurrency,
-        //         order.targetCurrency,
-        //         batchValue
-        //     );
-        // }
+        else {
+            amountReceived = exchangeTokenToToken(
+                order.account,
+                order.sourceCurrency,
+                order.targetCurrency,
+                batchValue
+            );
+        }
 
         // Update total tokens converted
         order.targetCurrencyConverted += amountReceived;
@@ -528,31 +528,34 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         );
     }
 
-    // function exchangeTokenToToken(
-    //     address _recipient,
-    //     address _sourceCurrency,
-    //     address _targetCurrency,
-    //     uint256 _amountSourceCurrency
-    // )
-    //     private
-    //     returns (uint256 amountReceived_)
-    // {
-    //     // Set up the Uniswap exchange interface for the target token
-    //     address exchangeAddress = factory.getExchange(_targetCurrency);
-    //     UniswapExchangeInterface exchange = UniswapExchangeInterface(exchangeAddress);
+    function exchangeTokenToToken(
+        address _recipient,
+        address _sourceCurrency,
+        address _targetCurrency,
+        uint256 _amountSourceCurrency
+    )
+        private
+        returns (uint256 amountReceived_)
+    {
+        // Set up the Uniswap exchange interface for the target token
+        address exchangeAddress = factory.getExchange(_sourceCurrency);
+        UniswapExchangeInterface exchange = UniswapExchangeInterface(exchangeAddress);
 
-    //     uint256 min_eth = 1; // TODO: implement this correctly
-    //     uint256 deadline = now + 300; // this is the value in the docs
+        uint256 min_eth_intermediary = 1; // TODO: implement this correctly
+        uint256 min_tokens_bought = 1; // TODO: implement this correctly
+        uint256 deadline = now + 300; // this is the value in the docs
 
-    //     // Approve token transfer and execute swap
-    //     IERC20(_sourceCurrency).approve(exchangeAddress, _amountSourceCurrency);
-    //     amountReceived_ = exchange.tokenToTokenTransferInput(
-    //         _amountSourceCurrency,
-    //         min_tokens,
-    //         deadline,
-    //         _recipient
-    //     );
-    // }
+        // Approve token transfer and execute swap
+        IERC20(_sourceCurrency).approve(exchangeAddress, _amountSourceCurrency);
+        amountReceived_ = exchange.tokenToTokenTransferInput(
+            _amountSourceCurrency,
+            min_tokens_bought,
+            min_eth_intermediary,
+            deadline,
+            _recipient,
+            _targetCurrency
+        );
+    }
 
     // Execute converstions 1-by-1
     function executeDueConversion(uint256 _id) public {

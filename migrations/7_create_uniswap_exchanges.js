@@ -25,7 +25,7 @@ module.exports = (deployer, network, accounts) => {
                 iFactory, instance, web3.utils.toWei("3"), web3.utils.toWei("10000")))
             .then(() => MoonToken.deployed())
             .then(instance => createExchangeWithLiquidity(
-                iFactory, instance, web3.utils.toWei("1"), web3.utils.toWei("300000")))
+                iFactory, instance, web3.utils.toWei("2"), web3.utils.toWei("5000")))
             .then(() => ConsensysToken.deployed())
             .then(instance => createExchangeWithLiquidity(
                 iFactory, instance, web3.utils.toWei("0.3"), web3.utils.toWei("2000")))
@@ -50,4 +50,5 @@ const createExchangeWithLiquidity = (iFactory, token, amountEth, amountTokens) =
             const deadline = Math.floor(Date.now() / 1000) + 300;
             exchange.addLiquidity(min_liquidity, max_tokens, deadline, {value: amountEth, gas: 6500000, gasPrice: 2000000000});
         })
+        .then(async () => console.log(`Exchange for ${await token.symbol()} at ${exchangeAddress}`));
 }

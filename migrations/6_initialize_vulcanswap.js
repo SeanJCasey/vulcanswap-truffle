@@ -45,7 +45,7 @@ module.exports = (deployer, network) => {
             );
 
             // Add Dai as source currency
-            const minDai = 200;
+            const minDai = 20;
             const maxDai = 20000;
             instance.createSourceCurrency(
                 daiAddresses[network],

@@ -32,20 +32,30 @@ module.exports = (deployer, network) => {
             // Add Eth as source currency
             const minEth = 0.1;
             const maxEth = 100;
-            instance.updateSourceCurrency(
+            instance.createSourceCurrency(
                 etherAddress,
                 web3.utils.toWei(String(minEth), 'ether'),
-                web3.utils.toWei(String(maxEth), 'ether'),
+                web3.utils.toWei(String(maxEth), 'ether')
+            );
+
+            // Associate with cEther
+            instance.updateSourceCurrencyCToken(
+                etherAddress,
                 cEtherAddresses[network]
             );
 
             // Add Dai as source currency
             const minDai = 200;
             const maxDai = 20000;
-            instance.updateSourceCurrency(
+            instance.createSourceCurrency(
                 daiAddresses[network],
                 web3.utils.toWei(String(minDai), 'ether'),
-                web3.utils.toWei(String(maxDai), 'ether'),
+                web3.utils.toWei(String(maxDai), 'ether')
+            );
+
+            // Associate with cDai
+            instance.updateSourceCurrencyCToken(
+                daiAddresses[network],
                 cDaiAddresses[network]
             );
         });

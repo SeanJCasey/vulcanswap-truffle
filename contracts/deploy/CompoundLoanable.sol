@@ -19,7 +19,7 @@ contract CompoundLoanable {
 
     function castAddressPayable(address _address)
         pure
-        internal
+        private
         returns (address payable)
     {
         return address(uint160(_address));
@@ -42,19 +42,15 @@ contract CompoundLoanable {
         delete idToCompoundLoan[_id];
     }
 
-    // function testCompoundRedeemCall(uint256 _id, uint256 _amount) view external returns (uint256) {
-    //     return testCompoundRedeem(_id, _amount).call();
-    // }
-
     // TODO - remove
-    function getCompoundLoan(uint256 _id)
-        view
-        external
-        returns (uint256 balanceUnderlying_, address underlying_)
-    {
-        CompoundLoan memory loan = idToCompoundLoan[_id];
-        return (loan.balanceUnderlying, loan.underlying);
-    }
+    // function getCompoundLoan(uint256 _id)
+    //     view
+    //     external
+    //     returns (uint256 balanceUnderlying_, address underlying_)
+    // {
+    //     CompoundLoan memory loan = idToCompoundLoan[_id];
+    //     return (loan.balanceUnderlying, loan.underlying);
+    // }
 
     function compoundRedeemBalanceUnderlying(uint256 _id)
         internal

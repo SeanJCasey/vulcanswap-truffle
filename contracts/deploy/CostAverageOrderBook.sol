@@ -4,15 +4,14 @@ import '../../node_modules/openzeppelin-solidity/contracts/ownership/Ownable.sol
 import '../../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol';
 import '../../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.sol';
 import './CompoundLoanable.sol';
+import './LimitedAcceptedCurrencies.sol';
 import './UniswapFactoryInterface.sol';
 import './UniswapExchangeInterface.sol';
 
-contract CostAverageOrderBook is Ownable, CompoundLoanable {
+contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ownable {
     using SafeMath for uint256;
 
     uint256 public nextId;
-    uint256 private feeBalance;
-    uint256 private feesWithdrawn;
     uint32 public minFrequency;
     uint8 public minBatches;
     uint8 public maxBatches;
@@ -36,10 +35,13 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
     }
     mapping(uint256 => OrderInfo) public idToCostAverageOrder;
     mapping(address => uint256[]) public accountToOrderIds;
-    mapping(address => uint256) public sourceCurrencyToMinAmount;
-    mapping(address => uint256) public sourceCurrencyToMaxAmount;
-    mapping(address => uint256) public currencyToFeeBalance;
-    mapping(address => uint256) public currencyToFeesWithdrawn;
+
+    // address[] feeCurrencies;
+    struct FeesCollected {
+        uint256 balance;
+        uint256 withdrawn;
+    }
+    mapping(address => FeesCollected) private currencyToFeesCollected;
 
     event NewOrder(
         address indexed _account,
@@ -63,7 +65,7 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
 
     constructor(address _uniswapFactoryAddress) public {
         factory = UniswapFactoryInterface(_uniswapFactoryAddress);
-        nextId = 1; // Set first order as 1 instead of 0
+        nextId = 1;
 
         // Initial order min/max
         maxBatches = 255;
@@ -74,44 +76,55 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
     // Compound needs to be able to pay back Eth loans
     function() external payable { require(msg.data.length == 0); }
 
-    // A max amount of 0 means the token is not accepted as source currency.
-    function updateSourceCurrency(
-        address _sourceCurrency,
+    function createSourceCurrency(
+        address _currency,
         uint256 _minAmount,
-        uint256 _maxAmount,
-        address _cToken
+        uint256 _maxAmount
     )
         external
         onlyOwner
     {
-        sourceCurrencyToMinAmount[_sourceCurrency] = _minAmount;
-        sourceCurrencyToMaxAmount[_sourceCurrency] = _maxAmount;
-        underlyingToCToken[_sourceCurrency] = _cToken;
+        addAcceptedCurrency(_currency, _minAmount, _maxAmount);
     }
 
-    function getSourceCurrencyLimits(address _sourceCurrency)
+    function updateSourceCurrencyCToken(
+        address _currency,
+        address _cToken
+    )
         external
-        view
-        returns (uint256 minAmount_, uint256 maxAmount_)
+        onlyOwner
+        acceptedCurrencyExists(_currency, true)
     {
-        minAmount_ = sourceCurrencyToMinAmount[_sourceCurrency];
-        maxAmount_ = sourceCurrencyToMaxAmount[_sourceCurrency];
+        underlyingToCToken[_currency] = _cToken;
     }
 
-    // TODO
-    // function getFeesCollectedTotals()
-    //     view
-    //     external
-    //     returns (uint256[] memory fees_)
-    // {
+    function updateSourceCurrencyIsActive(
+        address _currency,
+        bool _isActive
+    )
+        external
+        onlyOwner
+    {
+        updateAcceptedCurrencyIsActive(_currency, _isActive);
+    }
 
-    // }
+    function updateSourceCurrencyLimits(
+        address _currency,
+        uint256 _minAmount,
+        uint256 _maxAmount
+    )
+        external
+        onlyOwner
+    {
+        updateAcceptedCurrencyLimits(_currency, _minAmount, _maxAmount);
+    }
 
     function closeLoan(uint256 _id) private {
         if (idToCompoundLoan[_id].balanceCTokens > 0) {
             // Delete loan and add leftover cTokens to fee
             (uint256 cTokensRemaining, address cTokenAddress) = compoundCloseLoan(_id);
-            currencyToFeeBalance[cTokenAddress].add(cTokensRemaining);
+            FeesCollected storage feesCollected = currencyToFeesCollected[cTokenAddress];
+            feesCollected.balance = feesCollected.balance.add(cTokensRemaining);
         }
     }
 
@@ -161,94 +174,34 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
     )
         public
         payable
+        currencyIsAccepted(_sourceCurrency)
         returns (uint256 id_)
     {
         // Enforce common min/max values
         require(_batches <= maxBatches);
         require(_batches >= minBatches);
         require(_frequency >= minFrequency);
+        require(_amount >= acceptedCurrencyInfo[_sourceCurrency].minAmount);
+        require(_amount <= acceptedCurrencyInfo[_sourceCurrency].maxAmount);
 
-        uint256 orderId;
+        require(_sourceCurrency != _targetCurrency);
+
+        // If ETH payment
         if (_sourceCurrency == address(0)) {
-            orderId = createOrderEth(
-                _amount,
-                _targetCurrency,
-                _frequency,
-                _batches
-            );
+            require(_amount == msg.value);
         }
+        // If token payment
         else {
-            orderId = createOrderToken(
-                _amount,
-                _sourceCurrency,
-                _targetCurrency,
-                _frequency,
-                _batches
+            require(msg.value == 0); // Not payable
+            IERC20(
+                _sourceCurrency
+            ).transferFrom(
+                msg.sender,
+                address(this),
+                _amount
             );
         }
-        accountToOrderIds[msg.sender].push(orderId);
 
-        // Loan source currency on Compound if possible
-        if (underlyingToCToken[_sourceCurrency] != address(0)) {
-            createCompoundLoan(orderId, _amount, _sourceCurrency);
-        }
-
-        emit NewOrder(msg.sender, orderId);
-
-        return orderId;
-    }
-
-    function createOrderEth(
-        uint256 _amount,
-        address _targetCurrency,
-        uint256 _frequency,
-        uint8 _batches
-    )
-        internal
-        returns (uint256 id_)
-    {
-        require(_amount == msg.value); // should not be sending ETH
-        require(_targetCurrency != address(0)); // target can't be ETH
-        require(_amount >= sourceCurrencyToMinAmount[address(0)]);
-
-        OrderInfo memory newOrder = OrderInfo({
-            amount: _amount,
-            sourceCurrency: address(0),
-            targetCurrency: _targetCurrency,
-            state: OrderState.InProgress,
-            frequency: _frequency,
-            batches: _batches,
-            account: msg.sender,
-            sourceCurrencyBalance: _amount,
-            targetCurrencyConverted: 0,
-            batchesExecuted: 0,
-            lastConversionTimestamp: 0
-        });
-
-        idToCostAverageOrder[nextId] = newOrder;
-        nextId++;
-        return nextId-1;
-    }
-
-    function createOrderToken(
-        uint256 _amount,
-        address _sourceCurrency,
-        address _targetCurrency,
-        uint256 _frequency,
-        uint8 _batches
-    )
-        internal
-        returns (uint256 id_)
-    {
-        // Validate inputs
-        require(msg.value == 0); // Not payable
-        require(_targetCurrency != _sourceCurrency); // source and target can't be same token
-        require(_amount >= sourceCurrencyToMinAmount[_sourceCurrency]);
-
-        // Transfer tokens to contract
-        IERC20(_sourceCurrency).transferFrom(msg.sender, address(this), _amount);
-
-        // Create order
         OrderInfo memory newOrder = OrderInfo({
             amount: _amount,
             sourceCurrency: _sourceCurrency,
@@ -263,19 +216,17 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
             lastConversionTimestamp: 0
         });
         idToCostAverageOrder[nextId] = newOrder;
+        accountToOrderIds[msg.sender].push(nextId);
 
-        // Increment next order id
+        // Loan source currency on Compound if possible
+        if (underlyingToCToken[_sourceCurrency] != address(0)) {
+            createCompoundLoan(nextId, _amount, _sourceCurrency);
+        }
+
+        emit NewOrder(msg.sender, nextId);
+
         nextId++;
         return nextId-1;
-    }
-
-    function getFeeBalance()
-        view
-        public
-        onlyOwner
-        returns (uint256 feeBalance_)
-    {
-        feeBalance_ = feeBalance;
     }
 
     function getOrder(uint256 _id)
@@ -359,48 +310,59 @@ contract CostAverageOrderBook is Ownable, CompoundLoanable {
     }
 
     // Convenience function for dapp display of contract stats
-    // function getStatTotals()
-    //     view
-    //     external
-    //     returns (
-    //         uint256 orders_,
-    //         uint256 conversions_,
-    //         uint256 managedEth_
-    //     )
-    // {
-    //     orders_ = getOrderCount();
+    function getStatTotals()
+        view
+        external
+        returns (
+            uint256 orders_,
+            uint256 conversions_
+        )
+    {
+        orders_ = getOrderCount();
 
-    //     conversions_ = 0;
-    //     for (uint256 i=1; i<=getOrderCount(); i++) {
-    //         OrderInfo memory order = idToCostAverageOrder[i];
-    //         conversions_ += order.batchesExecuted;
-    //     }
+        conversions_ = 0;
+        for (uint256 i=1; i<=getOrderCount(); i++) {
+            OrderInfo memory order = idToCostAverageOrder[i];
+            conversions_ += order.batchesExecuted;
+        }
+    }
 
-    //     managedEth_ = address(this).balance.sub(feeBalance);
-    // }
+    function getTotalFeesCollected(address _currency)
+        view
+        external
+        returns (uint256)
+    {
+        FeesCollected memory feesCollected = currencyToFeesCollected[_currency];
+        return feesCollected.balance.add(feesCollected.withdrawn);
+    }
 
-    function setMaxBatches(uint8 _maxBatches) public onlyOwner {
+    function setMaxBatches(uint8 _maxBatches) external onlyOwner {
         maxBatches = _maxBatches;
     }
 
-    function setMinBatches(uint8 _minBatches) public onlyOwner {
+    function setMinBatches(uint8 _minBatches) external onlyOwner {
         minBatches = _minBatches;
     }
 
-    function setMinFrequency(uint32 _minFrequency) public onlyOwner {
+    function setMinFrequency(uint32 _minFrequency) external onlyOwner {
         minFrequency = _minFrequency;
     }
 
-    function withdrawFees() public onlyOwner {
-        require (feeBalance > 0);
+    function withdrawFees(address _currency) external onlyOwner {
+        FeesCollected storage feesCollected = currencyToFeesCollected[_currency];
+        require(feesCollected.balance > 0);
 
-        uint256 withdrawalAmount = feeBalance;
-        feeBalance = 0;
-        feesWithdrawn.add(withdrawalAmount);
+        uint256 withdrawalAmount = feesCollected.balance;
+        feesCollected.balance = 0;
+        feesCollected.withdrawn.add(withdrawalAmount);
 
-        msg.sender.transfer(withdrawalAmount);
+        if (_currency == address(0)) {
+            msg.sender.transfer(withdrawalAmount);
+        }
+        else {
+            IERC20(_currency).transfer(msg.sender, withdrawalAmount);
+        }
     }
-
 
     /*** Uniswap conversion logic ***/
 

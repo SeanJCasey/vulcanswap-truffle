@@ -1,5 +1,10 @@
 module.exports = (deployer, network) => {
-    if (!["mainnet", "rinkeby"].includes(network)) {
+    const liveNetworks = ["mainnet", "rinkeby"];
+    const nonDevNetworks = [
+        ...liveNetworks,
+        ...liveNetworks.map(liveNetwork => `${liveNetwork}-fork`)
+    ];
+    if (!nonDevNetworks.includes(network)) {
         const ConsensysToken = artifacts.require("./ConsensysToken");
         const FakeDai = artifacts.require("./FakeDai");
         const MoonToken = artifacts.require("./MoonToken");

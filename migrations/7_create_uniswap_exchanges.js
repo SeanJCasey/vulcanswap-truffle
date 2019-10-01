@@ -7,8 +7,12 @@ const ConsensysToken = artifacts.require("./ConsensysToken");
 const FakeDai = artifacts.require("./FakeDai");
 
 module.exports = (deployer, network, accounts) => {
-    // Create fake exchanges if not a Uniswap-supported network
-    if (!["mainnet, rinkeby"].includes(network)) {
+    const liveNetworks = ["mainnet", "rinkeby"];
+    const nonDevNetworks = [
+        ...liveNetworks,
+        ...liveNetworks.map(liveNetwork => `${liveNetwork}-fork`)
+    ];
+    if (!nonDevNetworks.includes(network)) {
         let iFactory;
         deployer
             // 1. Instantiate a uniswap factory interface with the deployed factory.

@@ -1,8 +1,10 @@
-const CostAverageOrderBook = artifacts.require("./CostAverageOrderBook");
-
 module.exports = (deployer, network) => {
-    // If not mainnet or rinkeby, deploy uniswap mock contracts
-    if (!["mainnet", "rinkeby"].includes(network)) {
+    const liveNetworks = ["mainnet", "rinkeby"];
+    const nonDevNetworks = [
+        ...liveNetworks,
+        ...liveNetworks.map(liveNetwork => `${liveNetwork}-fork`)
+    ];
+    if (!nonDevNetworks.includes(network)) {
         const UniswapExchange = artifacts.require("./uniswap_exchange");
         const UniswapFactory = artifacts.require("./uniswap_factory");
 

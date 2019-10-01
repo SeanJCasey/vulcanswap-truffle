@@ -5,6 +5,9 @@ module.exports = (deployer, network) => {
         mainnet: "0xc0a47dFe034B400B47bDaD5FecDa2621de6c4d95",
         rinkeby: "0xf5D915570BC477f9B8D6C0E980aA81757A3AaC36"
     };
+    for (liveNetwork in uniswapFactoryAddresses) {
+        uniswapFactoryAddresses[`${liveNetwork}-fork`] = uniswapFactoryAddresses[liveNetwork];
+    }
 
     if (!(network in uniswapFactoryAddresses)) {
         // Add uniswap factory to addresses

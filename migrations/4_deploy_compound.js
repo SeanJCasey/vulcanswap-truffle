@@ -1,6 +1,10 @@
 module.exports = (deployer, network) => {
-    // If not mainnet or rinkeby, deploy uniswap mock contracts
-    if (!["mainnet", "rinkeby"].includes(network)) {
+    const liveNetworks = ["mainnet", "rinkeby"];
+    const nonDevNetworks = [
+        ...liveNetworks,
+        ...liveNetworks.map(liveNetwork => `${liveNetwork}-fork`)
+    ];
+    if (!nonDevNetworks.includes(network)) {
         const FakeDai = artifacts.require("./FakeDai");
         const FakeCDai = artifacts.require("./FakeCDai");
         const FakeCEther = artifacts.require("./FakeCEther");

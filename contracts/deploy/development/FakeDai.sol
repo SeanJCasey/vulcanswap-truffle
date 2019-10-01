@@ -6,7 +6,7 @@ contract FakeDai is ERC20 {
     string public name = "Fake Dai";
     string public symbol = "fDAI";
     uint public decimals = 18;
-    uint public INITIAL_SUPPLY = 10000 * (10 ** decimals);
+    uint public INITIAL_SUPPLY = 1000000 * (10 ** decimals);
 
     constructor() public {
         _mint(msg.sender, INITIAL_SUPPLY);

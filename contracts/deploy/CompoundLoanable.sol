@@ -18,6 +18,8 @@ contract CompoundLoanable {
     mapping(uint256 => CompoundLoan) public idToCompoundLoan;
     mapping(address => address) public underlyingToCToken;
 
+    /* INTERNAL FUNCTIONS */
+
     function compoundCloseLoan(uint256 _id)
         internal
         returns (uint256 cTokensRemaining_, address cTokenAddress_)
@@ -33,6 +35,28 @@ contract CompoundLoanable {
 
         // Clear storage
         delete idToCompoundLoan[_id];
+    }
+
+    function compoundCreateLoan(
+        uint256 _id,
+        uint256 _amount,
+        address _underlying
+    )
+        internal
+    {
+        require (
+            underlyingToCToken[_underlying] != address(0),
+            "Compound loan create: no cToken address found"
+        );
+
+        CompoundLoan memory loan = CompoundLoan({
+            balanceCTokens: 0,
+            balanceUnderlying: _amount,
+            underlying: _underlying
+        });
+        idToCompoundLoan[_id] = loan;
+
+        compoundSupplyPrincipal(_id);
     }
 
     function compoundRedeemBalanceUnderlying(uint256 _id)
@@ -55,7 +79,9 @@ contract CompoundLoanable {
         );
 
         // Can use CErc20 for CEther because interface function is the same.
-        CErc20Interface cToken = CErc20Interface(underlyingToCToken[loan.underlying]);
+        CErc20Interface cToken = CErc20Interface(
+            underlyingToCToken[loan.underlying]
+        );
 
         // Redeem cTokens and adjust the underlying and cToken balances.
         loan.balanceUnderlying = loan.balanceUnderlying.sub(_amount);
@@ -65,7 +91,27 @@ contract CompoundLoanable {
             "Compound redeem: redeem failed"
         );
         uint256 cTokenBalanceAfter = cToken.balanceOf(address(this));
-        loan.balanceCTokens = loan.balanceCTokens.sub(cTokenBalanceBefore.sub(cTokenBalanceAfter));
+        loan.balanceCTokens = loan.balanceCTokens.sub(
+            cTokenBalanceBefore.sub(
+                cTokenBalanceAfter
+            )
+        );
+    }
+
+    /* PRIVATE FUNCTIONS */
+
+    function compoundSupplyEther(uint256 _amount)
+        private
+        returns (uint256 amountSupplied_)
+    {
+        address payable cEtherAddress = underlyingToCToken[address(0)].castPayable();
+        CEtherInterface cEther = CEtherInterface(cEtherAddress);
+
+        uint256 balanceBefore = cEther.balanceOf(address(this));
+        cEther.mint.value(_amount)();
+        uint256 balanceAfter = cEther.balanceOf(address(this));
+
+        amountSupplied_ = balanceAfter.sub(balanceBefore);
     }
 
     function compoundSupplyPrincipal(uint256 _id) private {
@@ -84,20 +130,6 @@ contract CompoundLoanable {
         loan.balanceCTokens = amountSupplied;
     }
 
-    function compoundSupplyEther(uint256 _amount)
-        private
-        returns (uint256 amountSupplied_)
-    {
-        address payable cEtherAddress = underlyingToCToken[address(0)].castPayable();
-        CEtherInterface cEther = CEtherInterface(cEtherAddress);
-
-        uint256 balanceBefore = cEther.balanceOf(address(this));
-        cEther.mint.value(_amount)();
-        uint256 balanceAfter = cEther.balanceOf(address(this));
-
-        amountSupplied_ = balanceAfter.sub(balanceBefore);
-    }
-
     function compoundSupplyToken(uint256 _amount, IERC20 _underlying)
         private
         returns (uint256 amountSupplied_)
@@ -112,27 +144,5 @@ contract CompoundLoanable {
         uint256 balanceAfter = cToken.balanceOf(address(this));
 
         amountSupplied_ = balanceAfter.sub(balanceBefore);
-    }
-
-    function createCompoundLoan(
-        uint256 _id,
-        uint256 _amount,
-        address _underlying
-    )
-        internal
-    {
-        require (
-            underlyingToCToken[_underlying] != address(0),
-            "Compound loan create: no cToken address found"
-        );
-
-        CompoundLoan memory loan = CompoundLoan({
-            balanceCTokens: 0,
-            balanceUnderlying: _amount,
-            underlying: _underlying
-        });
-        idToCompoundLoan[_id] = loan;
-
-        compoundSupplyPrincipal(_id);
     }
 }

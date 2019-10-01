@@ -7,7 +7,6 @@ contract LimitedAcceptedCurrencies {
     address[] internal acceptedCurrencies;
 
     enum AcceptedCurrencyState { None, Active, Inactive }
-
     struct AcceptedCurrencyInfo {
         uint256 minAmount;
         uint256 maxAmount;
@@ -29,6 +28,8 @@ contract LimitedAcceptedCurrencies {
         require(acceptedCurrencyInfo[_currency].state == AcceptedCurrencyState.Active);
         _;
     }
+
+    /* INTERNAL FUNCTIONS */
 
     function addAcceptedCurrency(
         address _currency,
@@ -69,15 +70,5 @@ contract LimitedAcceptedCurrencies {
         AcceptedCurrencyInfo storage acceptedCurrency = acceptedCurrencyInfo[_currency];
         acceptedCurrency.minAmount = _minAmount;
         acceptedCurrency.maxAmount = _maxAmount;
-    }
-
-    function getAcceptedCurrencyLimits(address _currency)
-        view
-        public
-        acceptedCurrencyExists(_currency, true)
-        returns (uint256 minAmount_, uint256 maxAmount_)
-    {
-        AcceptedCurrencyInfo memory acceptedCurrency = acceptedCurrencyInfo[_currency];
-        return (acceptedCurrency.minAmount, acceptedCurrency.maxAmount);
     }
 }

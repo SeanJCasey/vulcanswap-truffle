@@ -11,15 +11,24 @@ import './UniswapExchangeInterface.sol';
 contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ownable {
     using SafeMath for uint256;
 
-    uint256 public nextId;
+    uint256 internal nextId;
     uint32 public minFrequency;
     uint8 public minBatches;
     uint8 public maxBatches;
 
     UniswapFactoryInterface internal factory;
 
-    enum OrderState { Failed, InProgress, Completed, Cancelled }
+    /* STORAGE - FEES */
 
+    struct FeesCollected {
+        uint256 balance;
+        uint256 withdrawn;
+    }
+    mapping(address => FeesCollected) private currencyToFeesCollected;
+
+    /* STORAGE - ORDERS */
+
+    enum OrderState { Failed, InProgress, Completed, Cancelled }
     struct OrderInfo {
         address account;
         address sourceCurrency;
@@ -36,12 +45,7 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
     mapping(uint256 => OrderInfo) public idToCostAverageOrder;
     mapping(address => uint256[]) public accountToOrderIds;
 
-    // address[] feeCurrencies;
-    struct FeesCollected {
-        uint256 balance;
-        uint256 withdrawn;
-    }
-    mapping(address => FeesCollected) private currencyToFeesCollected;
+    /* EVENTS */
 
     event NewOrder(
         address indexed _account,
@@ -76,68 +80,9 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
     // Compound needs to be able to pay back Eth loans
     function() external payable { require(msg.data.length == 0); }
 
-    function createSourceCurrency(
-        address _currency,
-        uint256 _minAmount,
-        uint256 _maxAmount
-    )
-        external
-        onlyOwner
-    {
-        addAcceptedCurrency(_currency, _minAmount, _maxAmount);
-    }
+    /* EXTERNAL FUNCTIONS */
 
-    function updateSourceCurrencyCToken(
-        address _currency,
-        address _cToken
-    )
-        external
-        onlyOwner
-        acceptedCurrencyExists(_currency, true)
-    {
-        underlyingToCToken[_currency] = _cToken;
-    }
-
-    function updateSourceCurrencyIsActive(
-        address _currency,
-        bool _isActive
-    )
-        external
-        onlyOwner
-    {
-        updateAcceptedCurrencyIsActive(_currency, _isActive);
-    }
-
-    function updateSourceCurrencyLimits(
-        address _currency,
-        uint256 _minAmount,
-        uint256 _maxAmount
-    )
-        external
-        onlyOwner
-    {
-        updateAcceptedCurrencyLimits(_currency, _minAmount, _maxAmount);
-    }
-
-    function closeLoan(uint256 _id) private {
-        if (idToCompoundLoan[_id].balanceCTokens > 0) {
-            // Delete loan and add leftover cTokens to fee
-            (uint256 cTokensRemaining, address cTokenAddress) = compoundCloseLoan(_id);
-            FeesCollected storage feesCollected = currencyToFeesCollected[cTokenAddress];
-            feesCollected.balance = feesCollected.balance.add(cTokensRemaining);
-        }
-    }
-
-    function completeOrder(uint256 _id) private {
-        OrderInfo storage order = idToCostAverageOrder[_id];
-
-        closeLoan(_id);
-        order.state = OrderState.Completed;
-
-        emit CompleteOrder(order.account, _id);
-    }
-
-    function cancelOrder(uint256 _id) public {
+    function cancelOrder(uint256 _id) external {
         OrderInfo storage order = idToCostAverageOrder[_id];
 
         require(order.account == msg.sender);
@@ -165,6 +110,23 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         emit CancelOrder(order.account, _id);
     }
 
+    function checkConversionDueAll()
+        view
+        external
+        returns (uint256[] memory)
+    {
+        uint256 totalOrderCount = getOrderCount();
+        require(totalOrderCount > 0);
+
+        uint256[] memory coversionDueMap = new uint256[](totalOrderCount);
+
+        for (uint256 i=1; i<=totalOrderCount; i++) {
+            if (checkConversionDue(i) == true) coversionDueMap[i-1] = i;
+        }
+
+        return coversionDueMap;
+    }
+
     function createOrder(
         uint256 _amount,
         address _sourceCurrency,
@@ -172,7 +134,7 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         uint256 _frequency,
         uint8 _batches
     )
-        public
+        external
         payable
         currencyIsAccepted(_sourceCurrency)
         returns (uint256 id_)
@@ -218,9 +180,15 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         idToCostAverageOrder[nextId] = newOrder;
         accountToOrderIds[msg.sender].push(nextId);
 
-        // Loan source currency on Compound if possible
+        // Execute the first order
+        convertCurrency(nextId);
+
+        // Get updated remaining balance
+        uint256 remainingAmount = idToCostAverageOrder[nextId].sourceCurrencyBalance;
+
+        // Loan remaining source currency on Compound if possible
         if (underlyingToCToken[_sourceCurrency] != address(0)) {
-            createCompoundLoan(nextId, _amount, _sourceCurrency);
+            compoundCreateLoan(nextId, remainingAmount, _sourceCurrency);
         }
 
         emit NewOrder(msg.sender, nextId);
@@ -229,55 +197,27 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         return nextId-1;
     }
 
-    function getOrder(uint256 _id)
-        view
-        public
-        returns (
-            uint256 id_,
-            uint256 amount_,
-            address sourceCurrency_,
-            address targetCurrency_,
-            OrderState state_,
-            uint256 frequency_,
-            uint8 batches_,
-            uint8 batchesExecuted_,
-            uint256 lastConversionTimestamp_,
-            uint256 targetCurrencyConverted_,
-            uint256 sourceCurrencyBalance_
-        )
+    function createSourceCurrency(
+        address _currency,
+        uint256 _minAmount,
+        uint256 _maxAmount
+    )
+        external
+        onlyOwner
     {
-        OrderInfo memory order = idToCostAverageOrder[_id];
-
-        return (
-            _id,
-            order.amount,
-            order.sourceCurrency,
-            order.targetCurrency,
-            order.state,
-            order.frequency,
-            order.batches,
-            order.batchesExecuted,
-            order.lastConversionTimestamp,
-            order.targetCurrencyConverted,
-            order.sourceCurrencyBalance
-        );
+        addAcceptedCurrency(_currency, _minAmount, _maxAmount);
     }
 
-    function getOrderCount() view public returns (uint256) {
-        return nextId-1;
-    }
-
-    function getOrderCountForAccount(address _account)
-        view
-        public
-        returns (uint256 count_)
-    {
-        return accountToOrderIds[_account].length;
+    // Execute conversions en masse
+    function executeDueConversions() external {
+        for (uint256 i=1; i<=getOrderCount(); i++) {
+            executeDueConversion(i);
+        }
     }
 
     function getOrderForAccountIndex(address _account, uint256 _index)
         view
-        public
+        external
         returns (
             uint256 id_,
             uint256 amount_,
@@ -294,12 +234,27 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
     {
         require(_index < getOrderCountForAccount(_account));
 
-        return getOrder(accountToOrderIds[_account][_index]);
+        uint256 orderId = accountToOrderIds[_account][_index];
+        OrderInfo memory order = idToCostAverageOrder[orderId];
+
+        return (
+            orderId,
+            order.amount,
+            order.sourceCurrency,
+            order.targetCurrency,
+            order.state,
+            order.frequency,
+            order.batches,
+            order.batchesExecuted,
+            order.lastConversionTimestamp,
+            order.targetCurrencyConverted,
+            order.sourceCurrencyBalance
+        );
     }
 
     function getOrderParamLimits()
         view
-        public
+        external
         returns (
             uint32 minFrequency_,
             uint8 minBatches_,
@@ -307,33 +262,6 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         )
     {
         return (minFrequency, minBatches, maxBatches);
-    }
-
-    // Convenience function for dapp display of contract stats
-    function getStatTotals()
-        view
-        external
-        returns (
-            uint256 orders_,
-            uint256 conversions_
-        )
-    {
-        orders_ = getOrderCount();
-
-        conversions_ = 0;
-        for (uint256 i=1; i<=getOrderCount(); i++) {
-            OrderInfo memory order = idToCostAverageOrder[i];
-            conversions_ += order.batchesExecuted;
-        }
-    }
-
-    function getTotalFeesCollected(address _currency)
-        view
-        external
-        returns (uint256)
-    {
-        FeesCollected memory feesCollected = currencyToFeesCollected[_currency];
-        return feesCollected.balance.add(feesCollected.withdrawn);
     }
 
     function setMaxBatches(uint8 _maxBatches) external onlyOwner {
@@ -348,9 +276,38 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         minFrequency = _minFrequency;
     }
 
+    function updateSourceCurrencyCToken(address _currency, address _cToken)
+        external
+        onlyOwner
+        acceptedCurrencyExists(_currency, true)
+    {
+        underlyingToCToken[_currency] = _cToken;
+    }
+
+    function updateSourceCurrencyIsActive(address _currency, bool _isActive)
+        external
+        onlyOwner
+    {
+        updateAcceptedCurrencyIsActive(_currency, _isActive);
+    }
+
+    function updateSourceCurrencyLimits(
+        address _currency,
+        uint256 _minAmount,
+        uint256 _maxAmount
+    )
+        external
+        onlyOwner
+    {
+        updateAcceptedCurrencyLimits(_currency, _minAmount, _maxAmount);
+    }
+
     function withdrawFees(address _currency) external onlyOwner {
         FeesCollected storage feesCollected = currencyToFeesCollected[_currency];
-        require(feesCollected.balance > 0);
+        require(
+            feesCollected.balance > 0,
+            "Fee balance must be greater than 0"
+        );
 
         uint256 withdrawalAmount = feesCollected.balance;
         feesCollected.balance = 0;
@@ -364,7 +321,7 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         }
     }
 
-    /*** Uniswap conversion logic ***/
+    /* PUBLIC FUNCTIONS*/
 
     function checkConversionDue(uint256 _id) view public returns (bool) {
         OrderInfo memory order = idToCostAverageOrder[_id];
@@ -384,45 +341,53 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
 
         return true;
     }
-
-    function checkConversionDueAll()
-        view
-        external
-        returns (uint256[] memory)
-    {
-        uint256 totalOrderCount = getOrderCount();
-        require(totalOrderCount > 0);
-
-        uint256[] memory coversionDueMap = new uint256[](totalOrderCount);
-
-        for (uint256 i=1; i<=totalOrderCount; i++) {
-            if (checkConversionDue(i) == true) coversionDueMap[i-1] = i;
+    // Execute converstions 1-by-1
+    function executeDueConversion(uint256 _id) public {
+        if (checkConversionDue(_id) == true) {
+            convertCurrency(_id);
         }
-
-        return coversionDueMap;
     }
 
-    function checkConversionDueBatch(uint256 _idStart, uint16 _count)
+    function getOrderCount() view public returns (uint256) {
+        return nextId-1;
+    }
+
+    function getOrderCountForAccount(address _account)
         view
-        external
-        returns (uint256[] memory)
+        public
+        returns (uint256 count_)
     {
-        uint256 totalOrderCount = getOrderCount();
-        require(_idStart > 0);
-        require(_idStart <= totalOrderCount);
+        return accountToOrderIds[_account].length;
+    }
 
-        uint256[] memory coversionDueMap = new uint256[](_count);
+    /* INTERNAL FUNCTIONS */
 
-        for (
-            uint256 i=0; i<_count && _idStart.add(i) <= totalOrderCount; i++
-        )
-        {
-            if (checkConversionDue(_idStart.add(i)) == true) {
-                coversionDueMap[i] = _idStart.add(i);
-            }
+    function valuePerBatch(uint256 _amount, uint8 _batches)
+        pure
+        internal
+        returns (uint256)
+    {
+        return _amount.div(_batches);
+    }
+
+    /* PRIVATE FUNCTIONS */
+
+    function closeLoan(uint256 _id) private {
+        if (idToCompoundLoan[_id].balanceCTokens > 0) {
+            // Delete loan and add leftover cTokens to fee
+            (uint256 cTokensRemaining, address cTokenAddress) = compoundCloseLoan(_id);
+            FeesCollected storage feesCollected = currencyToFeesCollected[cTokenAddress];
+            feesCollected.balance = feesCollected.balance.add(cTokensRemaining);
         }
+    }
 
-        return coversionDueMap;
+    function completeOrder(uint256 _id) private {
+        OrderInfo storage order = idToCostAverageOrder[_id];
+
+        closeLoan(_id);
+        order.state = OrderState.Completed;
+
+        emit CompleteOrder(order.account, _id);
     }
 
     function convertCurrency(uint256 _id) private {
@@ -555,27 +520,5 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
             _recipient,
             _targetCurrency
         );
-    }
-
-    // Execute converstions 1-by-1
-    function executeDueConversion(uint256 _id) public {
-        if (checkConversionDue(_id) == true) {
-            convertCurrency(_id);
-        }
-    }
-
-    // Execute conversions en masse
-    function executeDueConversions() external {
-        for (uint256 i=1; i<=getOrderCount(); i++) {
-            executeDueConversion(i);
-        }
-    }
-
-    function valuePerBatch(uint256 _amount, uint8 _batches)
-        pure
-        internal
-        returns (uint256)
-    {
-        return _amount.div(_batches);
     }
 }

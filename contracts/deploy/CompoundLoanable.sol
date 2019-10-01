@@ -4,26 +4,19 @@ import '../../node_modules/openzeppelin-solidity/contracts/token/ERC20/IERC20.so
 import '../../node_modules/openzeppelin-solidity/contracts/math/SafeMath.sol';
 import '../lib/Compound/CErc20Interface.sol';
 import '../lib/Compound/CEtherInterface.sol';
+import '../lib/utils/AddressUtils.sol';
 
-// Owned by our contract
 contract CompoundLoanable {
     using SafeMath for uint256;
+    using AddressUtils for address;
 
     struct CompoundLoan {
         uint256 balanceCTokens;
         uint256 balanceUnderlying;
         address underlying;
     }
-    mapping(uint256 => CompoundLoan) internal idToCompoundLoan;
-    mapping(address => address) internal underlyingToCToken;
-
-    function castAddressPayable(address _address)
-        pure
-        private
-        returns (address payable)
-    {
-        return address(uint160(_address));
-    }
+    mapping(uint256 => CompoundLoan) public idToCompoundLoan;
+    mapping(address => address) public underlyingToCToken;
 
     function compoundCloseLoan(uint256 _id)
         internal
@@ -41,16 +34,6 @@ contract CompoundLoanable {
         // Clear storage
         delete idToCompoundLoan[_id];
     }
-
-    // TODO - remove
-    // function getCompoundLoan(uint256 _id)
-    //     view
-    //     external
-    //     returns (uint256 balanceUnderlying_, address underlying_)
-    // {
-    //     CompoundLoan memory loan = idToCompoundLoan[_id];
-    //     return (loan.balanceUnderlying, loan.underlying);
-    // }
 
     function compoundRedeemBalanceUnderlying(uint256 _id)
         internal
@@ -105,9 +88,7 @@ contract CompoundLoanable {
         private
         returns (uint256 amountSupplied_)
     {
-        address payable cEtherAddress = castAddressPayable(
-            underlyingToCToken[address(0)]
-        );
+        address payable cEtherAddress = underlyingToCToken[address(0)].castPayable();
         CEtherInterface cEther = CEtherInterface(cEtherAddress);
 
         uint256 balanceBefore = cEther.balanceOf(address(this));

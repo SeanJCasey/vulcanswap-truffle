@@ -36,8 +36,10 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         OrderState state;
         uint256 amount;
         uint256 frequency; // in seconds
+        uint256 createdTimestamp;
         uint256 lastConversionTimestamp;
         uint256 sourceCurrencyBalance;
+        uint256 sourceCurrencyConverted;
         uint256 targetCurrencyConverted;
         uint8 batches;
         uint8 batchesExecuted;
@@ -165,17 +167,19 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         }
 
         OrderInfo memory newOrder = OrderInfo({
-            amount: _amount,
-            sourceCurrency: _sourceCurrency,
-            targetCurrency: _targetCurrency,
-            state: OrderState.InProgress,
-            frequency: _frequency,
-            batches: _batches,
             account: msg.sender,
-            sourceCurrencyBalance: _amount,
-            targetCurrencyConverted: 0,
+            amount: _amount,
+            batches: _batches,
             batchesExecuted: 0,
-            lastConversionTimestamp: 0
+            createdTimestamp: now,
+            frequency: _frequency,
+            lastConversionTimestamp: 0,
+            sourceCurrency: _sourceCurrency,
+            sourceCurrencyBalance: _amount,
+            sourceCurrencyConverted: 0,
+            state: OrderState.InProgress,
+            targetCurrency: _targetCurrency,
+            targetCurrencyConverted: 0
         });
         idToCostAverageOrder[nextId] = newOrder;
         accountToOrderIds[msg.sender].push(nextId);
@@ -229,7 +233,8 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
             uint8 batchesExecuted_,
             uint256 lastConversionTimestamp_,
             uint256 targetCurrencyConverted_,
-            uint256 sourceCurrencyBalance_
+            uint256 sourceCurrencyConverted_
+            // uint256 createdTimestamp_
         )
     {
         require(_index < getOrderCountForAccount(_account));
@@ -248,7 +253,8 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
             order.batchesExecuted,
             order.lastConversionTimestamp,
             order.targetCurrencyConverted,
-            order.sourceCurrencyBalance
+            order.sourceCurrencyConverted
+            // order.createdTimestamp
         );
     }
 
@@ -402,6 +408,7 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
 
         // Update all values possible before performing conversion
         order.sourceCurrencyBalance -= batchValue;
+        order.sourceCurrencyConverted += batchValue;
         order.batchesExecuted += 1;
         order.lastConversionTimestamp = now;
 

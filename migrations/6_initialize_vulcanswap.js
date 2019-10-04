@@ -3,7 +3,8 @@ const CostAverageOrderBook = artifacts.require("./CostAverageOrderBook");
 module.exports = (deployer, network) => {
     const daiAddresses = {
         mainnet: "0x89d24A6b4CcB1B6fAA2625fE562bDD9a23260359",
-        rinkeby: "0x2448eE2641d78CC42D7AD76498917359D961A783"
+        rinkeby: "0x5592ec0cfb4dbc12d3ab100b257153436a1f0fea"
+        // rinkeby: "0x2448eE2641d78CC42D7AD76498917359D961A783"
     };
     for (liveNetwork in daiAddresses) {
         daiAddresses[`${liveNetwork}-fork`] = daiAddresses[liveNetwork];

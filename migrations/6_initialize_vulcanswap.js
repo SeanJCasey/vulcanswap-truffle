@@ -63,7 +63,7 @@ module.exports = (deployer, network) => {
 
         // Add Dai as source currency
         .then(() => {
-            const minDai = "20";
+            const minDai = "1";
             const maxDai = "20000";
             return contract.createSourceCurrency(
                 daiAddresses[network],

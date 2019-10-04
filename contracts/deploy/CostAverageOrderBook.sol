@@ -75,7 +75,7 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
 
         // Initial order min/max
         maxBatches = 255;
-        minBatches = 1;
+        minBatches = 2;
         minFrequency = 1 hours;
     }
 
@@ -217,6 +217,15 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
         for (uint256 i=1; i<=getOrderCount(); i++) {
             executeDueConversion(i);
         }
+    }
+
+    function getFeesCollected(address _currency)
+        view
+        external
+        returns (uint256)
+    {
+        FeesCollected memory fees = currencyToFeesCollected[_currency];
+        return fees.balance + fees.withdrawn;
     }
 
     function getOrderForAccountIndex(address _account, uint256 _index)
@@ -399,7 +408,14 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
     function convertCurrency(uint256 _id) private {
         OrderInfo storage order = idToCostAverageOrder[_id];
 
-        uint256 batchValue = valuePerBatch(order.amount, order.batches);
+        uint256 batchValue;
+        // If final batch, use entire amount, else calc batch
+        if (order.batches - order.batchesExecuted == 1) {
+            batchValue = order.sourceCurrencyBalance;
+        }
+        else {
+            batchValue = valuePerBatch(order.amount, order.batches);
+        }
 
         // In case batchValue is more than balance, use the remainder
         if (order.sourceCurrencyBalance < batchValue) {
@@ -446,7 +462,7 @@ contract CostAverageOrderBook is CompoundLoanable, LimitedAcceptedCurrencies, Ow
 
         emit OrderConversion(order.account, _id);
 
-        if (order.sourceCurrencyBalance == 0) {
+        if (order.batches == order.batchesExecuted) {
             completeOrder(_id);
         }
     }

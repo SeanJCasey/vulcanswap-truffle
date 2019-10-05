@@ -33,20 +33,21 @@ This repo contains the Node script for calling and executing the `checkConversio
 
 ## Recommended Installation for the entire dApp:
 
-1. Install Truffle globally: `npm install -g truffle`
+### 1. Install Truffle globally
+`npm install -g truffle`
 
-2. Clone this repo and install dependencies
+### 2. Clone this repo and install dependencies
 `git clone git@github.com:SeanJCasey/vulcanswap-truffle.git vulcanswap && cd vulcanswap && npm i`
 
-3. Clone the client repo into a `client` subdirectory and install dependencies
+### 3. Clone the client repo into a `client` subdirectory and install dependencies
 `git clone git@github.com:SeanJCasey/vulcanswap-client.git client && cd client && npm i && cd..`
 
 (Note: the `client/builds` folder is where `truffle-config.js` is set up to build its smart contracts for easy integration with frontend development.)
 
-4. Clone the serverless script into a `remote` subdirectory and install dependencies
+### 4. Clone the serverless script into a `remote` subdirectory and install dependencies
 `git clone git@github.com:SeanJCasey/vulcanswap-remote.git remote && cd remote && npm i & cd..`
 
-5. Deploy a local blockchain with Vulcan Swap's main smart contract, plus mock ERC20 tokens, Uniswap, and Compound
+### 5. Deploy a local blockchain with Vulcan Swap's main smart contract, plus mock ERC20 tokens, Uniswap, and Compound
 `truffle develop`
 
 Then at the `develop>` prompt:
@@ -54,8 +55,13 @@ Then at the `develop>` prompt:
 `compile`
 `migrate`
 
-6. In a new tab, spin up the client.
+### 6. In a new tab, spin up the client.
 
 `cd client && npm start`
+
+### 7. (optional) Use the `vulcanswap-remote` Node script to execute orders.
+
+See instructions at https://github.com/SeanJCasey/vulcanswap-remote
+
 
 Voila! You should be ready to "Go long and prosper" locally.
